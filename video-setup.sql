@@ -1,4 +1,4 @@
--- Basketball Draft: video upload and big-screen playback add-on
+-- Basketball Draft: video and image upload with big-screen playback add-on
 --
 -- Run your existing setup.sql FIRST.
 -- Then run this file once in Supabase SQL Editor.
@@ -53,7 +53,7 @@ values (
   'draft-videos',
   true,
   104857600,
-  array['video/mp4', 'video/webm']
+  array['video/mp4', 'video/webm', 'image/jpeg', 'image/png', 'image/webp', 'image/gif']
 )
 on conflict (id) do update set
   public = excluded.public,
@@ -100,19 +100,22 @@ begin
   end if;
 
   if coalesce(trim(p_name), '') = '' then
-    raise exception 'Type a video name.';
+    raise exception 'Type a media name.';
   end if;
 
   if coalesce(trim(p_storage_path), '') = '' then
-    raise exception 'Missing video storage path.';
+    raise exception 'Missing media storage path.';
   end if;
 
-  if coalesce(p_mime_type, '') not in ('video/mp4', 'video/webm') then
-    raise exception 'Only MP4 and WebM videos are supported.';
+  if coalesce(p_mime_type, '') not in (
+    'video/mp4', 'video/webm',
+    'image/jpeg', 'image/png', 'image/webp', 'image/gif'
+  ) then
+    raise exception 'Supported files: MP4, WebM, JPG, PNG, WebP, and GIF.';
   end if;
 
   if coalesce(p_size_bytes, 0) <= 0 or p_size_bytes > 104857600 then
-    raise exception 'The video must be 100 MB or smaller.';
+    raise exception 'The media file must be 100 MB or smaller.';
   end if;
 
   insert into public.draft_videos (
