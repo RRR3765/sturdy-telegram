@@ -40,18 +40,42 @@
   };
 
   function safeFileName(name) {
-    return String(name || "video")
+    return String(name || "media")
       .toLowerCase()
       .replace(/[^a-z0-9._-]+/g, "-")
       .replace(/^-+|-+$/g, "")
-      .slice(-100) || "video";
+      .slice(-100) || "media";
   }
 
-  function isAllowedVideo(file) {
-    const type = String(file?.type || "").toLowerCase();
+  const ALLOWED_MIME_TYPES = new Set([
+    "video/mp4",
+    "video/webm",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif"
+  ]);
+
+  function inferMimeType(file) {
+    const supplied = String(file?.type || "").toLowerCase();
+    if (ALLOWED_MIME_TYPES.has(supplied)) return supplied;
+
     const name = String(file?.name || "").toLowerCase();
-    return type === "video/mp4" || type === "video/webm" ||
-      name.endsWith(".mp4") || name.endsWith(".webm");
+    if (name.endsWith(".mp4")) return "video/mp4";
+    if (name.endsWith(".webm")) return "video/webm";
+    if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+    if (name.endsWith(".png")) return "image/png";
+    if (name.endsWith(".webp")) return "image/webp";
+    if (name.endsWith(".gif")) return "image/gif";
+    return "";
+  }
+
+  function isAllowedMedia(file) {
+    return Boolean(inferMimeType(file));
+  }
+
+  function isImageMedia(media) {
+    return String(media?.mime_type || "").toLowerCase().startsWith("image/");
   }
 
   function commissionerPassword() {
@@ -168,13 +192,16 @@
     };
   }
 
-  async function uploadVideo(file, title) {
-    if (!file) throw new Error("Choose an MP4 or WebM video.");
-    if (!isAllowedVideo(file)) throw new Error("Only MP4 and WebM videos are supported.");
-    if (file.size > MAX_FILE_BYTES) throw new Error("The video must be 100 MB or smaller.");
+  async function uploadMedia(file, title) {
+    if (!file) throw new Error("Choose an MP4, WebM, JPG, PNG, WebP, or GIF file.");
+    if (!isAllowedMedia(file)) {
+      throw new Error("Supported files: MP4, WebM, JPG, PNG, WebP, and GIF.");
+    }
+    if (file.size > MAX_FILE_BYTES) throw new Error("The media file must be 100 MB or smaller.");
 
     const displayName = String(title || file.name.replace(/\.[^.]+$/, "")).trim();
-    if (!displayName) throw new Error("Type a video name.");
+    if (!displayName) throw new Error("Type a media name.");
+    const mimeType = inferMimeType(file);
 
     if (!configured) {
       const id = createId();
@@ -182,7 +209,7 @@
         id,
         name: displayName,
         original_name: file.name,
-        mime_type: file.type || (file.name.toLowerCase().endsWith(".webm") ? "video/webm" : "video/mp4"),
+        mime_type: mimeType,
         size_bytes: file.size,
         blob: file,
         created_at: new Date().toISOString()
@@ -197,7 +224,7 @@
     const path = `${Date.now()}-${createId()}-${safeFileName(file.name)}`;
     const upload = await client.storage.from(BUCKET).upload(path, file, {
       cacheControl: "3600",
-      contentType: file.type || "video/mp4",
+      contentType: mimeType,
       upsert: false
     });
     if (upload.error) throw upload.error;
@@ -207,7 +234,7 @@
         p_password: password,
         p_name: displayName,
         p_storage_path: path,
-        p_mime_type: file.type || "video/mp4",
+        p_mime_type: mimeType,
         p_size_bytes: file.size
       });
     } catch (error) {
@@ -231,7 +258,7 @@
     }
 
     const video = await demoGet(videoId);
-    if (!video) throw new Error("Video not found.");
+    if (!video) throw new Error("Media file not found.");
     setDemoState({
       playing: true,
       active_video_id: String(videoId),
@@ -266,7 +293,7 @@
       if (video.storage_path) {
         const removal = await client.storage.from(BUCKET).remove([video.storage_path]);
         if (removal.error) {
-          console.warn("Video metadata was deleted, but the storage file could not be removed.", removal.error);
+          console.warn("Media metadata was deleted, but the storage file could not be removed.", removal.error);
         }
       }
       return;
@@ -312,32 +339,32 @@
       card.id = "draftVideoManager";
       card.className = "card video-manager-card";
       card.innerHTML = `
-        <h2>🎬 Videos on the Big Screen</h2>
+        <h2>🎬 Videos & Images on the Big Screen</h2>
         <p class="video-help">
-          Upload an MP4 or WebM, then choose which video should take over the display.
-          The draft screen returns automatically when the video ends.
+          Upload a video or image, then choose what should take over the display.
+          Videos return to the draft when they end. Images stay up until you stop them.
         </p>
 
         <div class="video-upload-grid">
           <input id="videoFeatureName" class="big-input" type="text"
-                 placeholder="Video name, such as Team Introduction">
+                 placeholder="Media name, such as Team Introduction">
           <input id="videoFeatureFile" class="video-file-picker" type="file"
-                 accept="video/mp4,video/webm,.mp4,.webm">
+                 accept="video/mp4,video/webm,image/jpeg,image/png,image/webp,image/gif,.mp4,.webm,.jpg,.jpeg,.png,.webp,.gif">
           <label class="video-option">
             <input id="videoFeaturePauseClock" type="checkbox" checked>
-            Pause the draft clock before showing a video
+            Pause the draft clock before showing media
           </label>
           <label class="video-option">
             <input id="videoFeatureStartMuted" type="checkbox">
-            Start muted
+            Start videos muted
           </label>
-          <button id="videoFeatureUpload" class="big-button green">⬆️ Upload Video</button>
+          <button id="videoFeatureUpload" class="big-button green">⬆️ Upload Media</button>
         </div>
 
         <div id="videoFeatureStatus" class="message video-status hidden"></div>
         <div id="videoFeatureLibrary" class="video-library"></div>
         <button id="videoFeatureStop" class="big-button red video-stop-button">
-          ⏹️ Stop Video and Return to Draft
+          ⏹️ Stop Media and Return to Draft
         </button>
       `;
       messageCard.insertAdjacentElement("afterend", card);
@@ -349,23 +376,23 @@
         button.disabled = true;
         button.textContent = "Uploading…";
         try {
-          await uploadVideo(file, title);
+          await uploadMedia(file, title);
           $("videoFeatureFile").value = "";
           $("videoFeatureName").value = "";
-          showVideoStatus("Video uploaded!");
+          showVideoStatus("Media uploaded!");
           await refreshCommissionerLibrary();
         } catch (error) {
           showVideoStatus(error.message || String(error), true);
         } finally {
           button.disabled = false;
-          button.textContent = "⬆️ Upload Video";
+          button.textContent = "⬆️ Upload Media";
         }
       });
 
       $("videoFeatureStop").addEventListener("click", async () => {
         try {
           await stopVideo();
-          showVideoStatus("Video stopped. The draft is back on the big screen.");
+          showVideoStatus("Media stopped. The draft is back on the big screen.");
           await refreshCommissionerLibrary();
         } catch (error) {
           showVideoStatus(error.message || String(error), true);
@@ -382,21 +409,29 @@
         return;
       }
 
+      const imageMode = isImageMedia(video);
       const backdrop = document.createElement("div");
       backdrop.className = "video-preview-backdrop";
       backdrop.innerHTML = `
         <div class="video-preview-box">
-          <video controls autoplay playsinline></video>
+          ${imageMode
+            ? '<img alt="Media preview">'
+            : '<video controls autoplay playsinline></video>'}
           <button class="video-preview-close">Close Preview</button>
         </div>
       `;
-      const player = backdrop.querySelector("video");
-      player.src = url;
+
+      const mediaElement = backdrop.querySelector(imageMode ? "img" : "video");
+      mediaElement.src = url;
 
       const close = () => {
-        player.pause();
-        player.removeAttribute("src");
-        player.load();
+        if (!imageMode) {
+          mediaElement.pause();
+          mediaElement.removeAttribute("src");
+          mediaElement.load();
+        } else {
+          mediaElement.removeAttribute("src");
+        }
         if (String(url).startsWith("blob:")) URL.revokeObjectURL(url);
         backdrop.remove();
       };
@@ -418,7 +453,7 @@
         if (!videos.length) {
           library.innerHTML = `
             <div class="video-library-empty">
-              No videos uploaded yet.
+              No videos or images uploaded yet.
             </div>
           `;
           return;
@@ -430,16 +465,16 @@
             <div class="video-library-row${playing ? " is-playing" : ""}" data-video-id="${escapeHtml(video.id)}">
               <div>
                 <div class="video-library-name">
-                  ${playing ? "▶️ " : ""}${escapeHtml(video.name)}
+                  ${playing ? "▶️ " : (isImageMedia(video) ? "🖼️ " : "🎬 ")}${escapeHtml(video.name)}
                 </div>
                 <div class="video-library-meta">
-                  ${escapeHtml(video.mime_type || "video")} · ${formatBytes(video.size_bytes)}
-                  ${playing ? " · Playing on big screen" : ""}
+                  ${escapeHtml(video.mime_type || "media")} · ${formatBytes(video.size_bytes)}
+                  ${playing ? " · Showing on big screen" : ""}
                 </div>
               </div>
               <div class="video-row-actions">
                 <button class="video-small-button light" data-video-action="preview">Preview</button>
-                <button class="video-small-button" data-video-action="play">Play on Big Screen</button>
+                <button class="video-small-button" data-video-action="play">Show on Big Screen</button>
                 <button class="video-small-button red" data-video-action="delete">Delete</button>
               </div>
             </div>
@@ -462,7 +497,7 @@
               if (!confirm(`Delete "${video.name}"?`)) return;
               try {
                 await deleteVideo(video);
-                showVideoStatus("Video deleted.");
+                showVideoStatus("Media deleted.");
                 await refreshCommissionerLibrary();
               } catch (error) {
                 showVideoStatus(error.message || String(error), true);
@@ -555,6 +590,7 @@
       overlay.innerHTML = `
         <div id="draftVideoTitle" class="draft-video-title"></div>
         <video id="draftDisplayVideo" playsinline preload="auto"></video>
+        <img id="draftDisplayImage" class="hidden" alt="Big-screen image">
         <div class="draft-video-controls">
           <button id="draftVideoPlayButton" class="draft-video-play hidden">▶️ Play Video</button>
           <button id="draftVideoSoundButton" class="draft-video-sound hidden">🔊 Turn On Sound</button>
@@ -582,6 +618,7 @@
       overlay.addEventListener("click", async event => {
         if (event.target.closest("button")) return;
         const player = $("draftDisplayVideo");
+        if (player.classList.contains("hidden")) return;
         if (player.paused) {
           try {
             await player.play();
@@ -597,11 +634,15 @@
       injectDisplayUi();
       const overlay = $("draftVideoOverlay");
       const player = $("draftDisplayVideo");
+      const image = $("draftDisplayImage");
       overlay.classList.add("hidden");
       overlay.setAttribute("aria-hidden", "true");
       player.pause();
       player.removeAttribute("src");
       player.load();
+      player.classList.remove("hidden");
+      image.removeAttribute("src");
+      image.classList.add("hidden");
       $("draftVideoPlayButton").classList.add("hidden");
       $("draftVideoSoundButton").classList.add("hidden");
       if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
@@ -648,11 +689,13 @@
       injectDisplayUi();
       const overlay = $("draftVideoOverlay");
       const player = $("draftDisplayVideo");
+      const image = $("draftDisplayImage");
+      const imageMode = isImageMedia(active);
 
       if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
       currentObjectUrl = null;
 
-      let url = await videoUrl(active);
+      const url = await videoUrl(active);
       if (String(url).startsWith("blob:")) currentObjectUrl = url;
 
       currentToken = String(active.play_token || `${active.id}-${active.started_at}`);
@@ -660,6 +703,22 @@
       overlay.classList.remove("hidden");
       overlay.setAttribute("aria-hidden", "false");
 
+      if (imageMode) {
+        player.pause();
+        player.removeAttribute("src");
+        player.load();
+        player.classList.add("hidden");
+        image.src = url;
+        image.alt = active.name || "Big-screen image";
+        image.classList.remove("hidden");
+        $("draftVideoPlayButton").classList.add("hidden");
+        $("draftVideoSoundButton").classList.add("hidden");
+        return;
+      }
+
+      image.removeAttribute("src");
+      image.classList.add("hidden");
+      player.classList.remove("hidden");
       player.pause();
       player.src = url;
       player.muted = Boolean(active.muted);
@@ -711,7 +770,7 @@
           await beginVideo(active);
         }
       } catch (error) {
-        console.warn("Video display check failed.", error);
+        console.warn("Media display check failed.", error);
       } finally {
         checking = false;
       }
